@@ -15,7 +15,7 @@ mod scene;
 mod spline;
 mod rendering;
 use rendering::{render::{Renderer, Vertex, VertexSimple}, render_camera::RenderCamera, text::{format_to_exact_length, RenderedText, TextVbo}};
-
+mod kinematics;
 
 mod util;
 

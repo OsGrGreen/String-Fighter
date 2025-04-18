@@ -6,8 +6,7 @@ use light::Light;
 use objects::{physics::{physics_object_factory, PhysicsObject}, renderable::renderobjects::RenderObject, WorldObject};
 use rand::Rng;
 use winit::{keyboard, window::Window};
-
-use crate::{rendering::{render::{self, Renderer}, render_camera::RenderCamera}, spline::Spline, util::{create_fbo, create_render_textures, input_handler::{self, InputHandler}, load_texture}};
+use crate::{kinematics::inverse::{segment::Segment, segment_to_straight_spline}, rendering::{render::{self, Renderer}, render_camera::RenderCamera}, spline::Spline, util::{create_fbo, create_render_textures, input_handler::{self, InputHandler}, load_texture}};
 
 pub mod bezier_surface;
 pub mod objects;
@@ -42,16 +41,19 @@ impl<'a> Scene<'a>{
             }
             
         }
-        let mut spline = Spline::new_empty();
-        spline.insert([Vec3::new(2.0, 0.0, 0.0), Vec3::new(0.0, 1.0, 2.1), Vec3::new(1.0, 2.0, 0.0), Vec3::new(1.0, 0.0, -0.5)]);
-        spline.insert_c2(Vec3::new(-2.0, 0.0, 0.0));
-        //spline.insert_c2(Vec3::new(0.0, 1.0, 0.5));
-        //spline.insert_c2(Vec3::new(2.0,0.0,0.0));
-        //spline.insert_c0([Vec3::new(2.0, -0.5, 0.5), Vec3::new(0.0, -1.0, 1.0), Vec3::new(3.0, -2.0, 2.0)]);
-        //spline.insert_c0([Vec3::new(2.0, -4.0, 2.0),Vec3::new(0.5, 5.0, 2.0),Vec3::new(0.5, 0.0, 0.0)]);
+        //let mut spline = Spline::new_empty();
+        //spline.insert([Vec3::new(2.0, 0.0, 0.5), Vec3::new(0.0, 1.0, 2.1), Vec3::new(1.0, 2.0, 0.0), Vec3::new(1.0, 0.0, -0.5)]);
+        //spline.insert_c2(Vec3::new(2.0, 0.0, 0.5));
+        //let t = std::time::Instant::now();
+        let s1 = Segment::new(Vec3::new(0.0, 0.0, 0.0),5.0,0.0, 0.0);
+        let s2: Segment = Segment::new_child(&s1, 2.0, 0.0,0.5);
+        let s3: Segment = Segment::new_child(&s2, 2.0, 0.0,2.0);
 
+        let segment_list = vec![s1,s2, s3];
+        let spline = segment_to_straight_spline(segment_list);
+        //println!("Time to create segments and convert {:?}", t.elapsed());
         let (vbo, inds, rend) = spline.spline_renderer(display);
-        //println!("VBO {:?}", vbo);
+       
         fbo.draw(&vbo, &inds, &rend.program, &uniform! {u_screenSize: [self.scene_tex.dimensions().0 as f32, self.scene_tex.dimensions().1 as f32], u_thickness: 50.0 as f32, steps: 48.0 as f32, model: Mat4::IDENTITY.to_cols_array_2d(), projection: self.camera.perspective.to_cols_array_2d(), view:self.camera.camera_matrix.to_cols_array_2d()}, &rend.draw_params).unwrap();
     }
 
@@ -105,20 +107,7 @@ impl<'a> Scene<'a>{
     pub fn update_physics(&mut self, dt: f32){
         let len = self.world_objects.len();
         for i in 0..len {
-            let (before, after) = self.world_objects.split_at_mut(i);
-            let (obj1, after) = after.split_first_mut().unwrap(); // Get obj1 from after
-            if !obj1.id.eq("sun"){
-                for obj2 in before.iter().chain(after.iter()) {
-                    let (dir, distance) = obj1.distance(obj2);
-                    let force = G*(obj1.physics_object.get_mass()*obj2.physics_object.get_mass())/(distance*distance);
-                    obj1.physics_object.add_force(dir.normalize()*force);
-                    //Collision
-                    if obj1.collides(obj2){
-                        //println!("Collision between {:?} and {:?}", obj1,obj2);
 
-                    }
-                }
-            }
         }
         for obj in &mut self.world_objects{
             obj.update_physics(dt);
@@ -128,41 +117,14 @@ impl<'a> Scene<'a>{
     }
 
     pub fn init_gravity_scene(window: &Window, display: &Display<WindowSurface>, size: (u32,u32)) -> Scene<'a>{
-        let planet_renderer  = Renderer::init(display, include_bytes!(r"../../shaders/planet/vert.glsl"), include_bytes!(r"../../shaders/planet/frag.glsl"), include_bytes!(r"../../objects/planet.obj")).unwrap();
-        let mut render_map = HashMap::new();
-        render_map.insert("planet".to_string(), planet_renderer);
-        
-        let mut sun = WorldObject::new("sun".to_string(), RenderObject::new(Some("planet".to_string())), physics_object_factory(0, vec![1.0,50000.0]));
-        sun.render_object.model_object.translate(Vec3::new(0.0, 0.0, 0.0));
-        
-        let mut planet1 = WorldObject::new("planet1".to_string(),RenderObject::new(Some("planet".to_string())), physics_object_factory(0, vec![0.5,2.0]));
-        planet1.render_object.model_object.translate(Vec3::new(-5.0, -3.0, 2.0));
-        planet1.physics_object.set_init_velocity(Vec3::new(0.0, 3.0, 1.0));
-        
-        let mut planet2 = WorldObject::new("planet2".to_string(),RenderObject::new(Some("planet".to_string())), physics_object_factory(0, vec![0.5,1.0]));
-        planet2.render_object.model_object.translate(Vec3::new(-7.0, 3.0, 0.0));
-        planet2.physics_object.set_init_velocity(Vec3::new(1.0, 4.0, 0.0));
-        
-        let mut planet3 = WorldObject::new("planet3".to_string(),RenderObject::new(Some("planet".to_string())), physics_object_factory(0, vec![0.75,5.0]));
-        planet3.render_object.model_object.translate(Vec3::new(5.0, -4.0, 0.0));
-        planet3.physics_object.set_init_velocity(Vec3::new(1.5, 2.0, 0.0));
+        //let planet_renderer  = Renderer::init(display, include_bytes!(r"../../shaders/planet/vert.glsl"), include_bytes!(r"../../shaders/planet/frag.glsl"), include_bytes!(r"../../objects/planet.obj")).unwrap();
+        let mut render_map = HashMap::new();        
 
-        let mut solar_system = vec![sun, planet1, planet2, planet3];
-
-        let mut rng = rand::rng();
-        for _ in 0..0{
-            let mut add_planet = WorldObject::new("planet3".to_string(),RenderObject::new(Some("planet".to_string())), physics_object_factory(0, vec![rng.random_range(0.0..1.5),rng.random_range(0.1..20.0)]));
-            add_planet.render_object.model_object.translate(Vec3::new(rng.random_range(-5.5..5.5), rng.random_range(-5.5..5.5), 0.0));
-            add_planet.physics_object.set_init_velocity(Vec3::new(rng.random_range(-1.5..1.5), rng.random_range(-2.0..2.0), 0.0));
-            solar_system.push(add_planet);
-        }
 
         let (world_texture, depth_world_texture) = create_render_textures(&display,size.0, size.1);
 
-        let mut return_scene = Scene { world_objects: solar_system, lights: Vec::new(), renderers: render_map,camera: RenderCamera::new(Vec3::new(0.0, 0.0, 15.0), Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 1.0, 0.0), Vec3::new(0.0, 0.0, -1.0), window.inner_size().into()), textures: HashMap::new(), scene_tex: world_texture, scene_depth: depth_world_texture};
-        
-        return_scene.add_texture("sun", display, include_bytes!(r"../../textures/sun.png"));
-        return_scene.add_texture("planet1", display, include_bytes!(r"../../textures/planet.png"));
+        let mut return_scene = Scene { world_objects: Vec::new(), lights: Vec::new(), renderers: render_map,camera: RenderCamera::new(Vec3::new(0.0, 0.0, 15.0), Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 1.0, 0.0), Vec3::new(0.0, 0.0, -1.0), window.inner_size().into()), textures: HashMap::new(), scene_tex: world_texture, scene_depth: depth_world_texture};
+    
         
         return return_scene;
     }

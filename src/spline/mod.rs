@@ -1,3 +1,5 @@
+use std::{error::Error, ffi::NulError};
+
 use glam::Vec3;
 use glium::{glutin::{api::wgl::display, surface::WindowSurface}, index::PrimitiveType, Display, IndexBuffer, VertexBuffer};
 
@@ -31,6 +33,16 @@ pub struct Spline{
 impl Spline{
     pub fn new_empty() -> Spline{
         Spline { curves: Vec::new() }
+    }
+
+    pub fn new(points: Vec<Vec3>) -> Spline{
+
+        let mut curves: Vec<BezierCurve> = Vec::new();
+        for i in (0..points.len()).step_by(4){
+            curves.push(BezierCurve::new([points[i], points[i+1],points[i+2],points[i+3]]));
+        }
+
+        Spline { curves: curves}
     }
 
     pub fn insert(&mut self, points: [Vec3; 4]) {
